@@ -113,7 +113,7 @@ as their only argument.")
              (org-ehtml-send-400 proc
                                  (format
                                   "Invalid custom command.  Try %s."
-                                  (mapconcat 'identity descriptions " or "))))))
+                                  (mapconcat 'identity descriptions " or </br>"))))))
         (_
          (org-ehtml-send-400 proc (format "Unknown Agenda Command `%s'.  Try\
  <a href=\"/agenda/day\">day</a> or <a href=\"/agenda/todo\">todo</a>." cmd))))
