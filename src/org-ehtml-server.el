@@ -143,6 +143,10 @@ as their only argument.")
            (beg (string-to-number (cdr (assoc "beg"  headers))))
            (end (string-to-number (cdr (assoc "end"  headers))))
            (org                   (cdr (assoc "org"  headers))))
+	  ;; decode the org content
+	  (setq org
+	   (decode-coding-string org 'utf-8)
+	   )
       (when (string= (file-name-nondirectory path) "")
         (setq path (concat path "index.org")))
       (when (string= (file-name-extension path) "html")
