@@ -130,7 +130,7 @@ as their only argument.")
              (org-ehtml-send-400 proc
                                  (format
                                   "Invalid custom command.  Try %s."
-                                  (mapconcat 'identity descriptions " or "))))))
+                                  (mapconcat 'identity descriptions " or </br>"))))))
         (_
          (org-ehtml-send-400 proc (format "Unknown Agenda Command `%s'.  Try\
  <a href=\"/agenda/day\">day</a> or <a href=\"/agenda/todo\">todo</a>." cmd))))
@@ -155,24 +155,42 @@ as their only argument.")
    ;; none of the above -> missing file
    (t (ws-send-404 proc))))
 
+(defun org-ehtml-edit-handler_1 (filename path beg end org)
+  (with-temp-buffer
+	(insert-file filename)
+	(let ((orig (buffer-string)))
+	  (replace-region beg end org)
+	  (if (run-hook-with-args-until-failure 'org-ehtml-before-save-hook)
+		  (progn
+		   (write-file filename)
+		   ;; revert the org buffer if needed
+		   (when (get-file-buffer filename)
+			 (with-current-buffer (get-file-buffer filename)
+			   (revert-buffer t t t)
+			 )
+		   )
+		   )
+		(replace-region (point-min) (point-max) orig)
+		(ws-send-500 process "edit failed `org-ehtml-before-save-hook'")))
+	(run-hook-with-args 'org-ehtml-after-save-hook request)
+	)
+  )
+
 (defun org-ehtml-edit-handler (request)
   (with-slots (process headers) request
     (let* ((path       (substring (cdr (assoc "path" headers)) 1))
            (beg (string-to-number (cdr (assoc "beg"  headers))))
            (end (string-to-number (cdr (assoc "end"  headers))))
            (org                   (cdr (assoc "org"  headers))))
+	  ;; decode the org content
+	  (setq org
+	   (decode-coding-string org 'utf-8)
+	   )
       (when (string= (file-name-nondirectory path) "")
         (setq path (concat path "index.org")))
       (when (string= (file-name-extension path) "html")
         (setq path (concat (file-name-sans-extension path) ".org")))
-      (org-babel-with-temp-filebuffer (expand-file-name path org-ehtml-docroot)
-        (let ((orig (buffer-string)))
-          (replace-region beg end org)
-          (if (run-hook-with-args-until-failure 'org-ehtml-before-save-hook)
-              (save-buffer)
-            (replace-region (point-min) (point-max) orig)
-            (ws-send-500 process "edit failed `org-ehtml-before-save-hook'")))
-        (run-hook-with-args 'org-ehtml-after-save-hook request))
+		(org-ehtml-edit-handler_1 (expand-file-name path org-ehtml-docroot) path beg end org)
       (ws-response-header process 200
         '("Content-type" . "text/html; charset=utf-8"))
       (process-send-string process

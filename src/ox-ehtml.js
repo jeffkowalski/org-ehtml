@@ -35,6 +35,10 @@ function set_clickable(){
                           function(){ $(this).hide(); } );
 };
 
+function save_changes_handle_error(error) {
+	alert('error:'+error.responseText);
+};
+
 function save_changes(obj, org, beg, end){
   var here = window.location.pathname;
   $.ajax({
@@ -60,7 +64,7 @@ function save_changes(obj, org, beg, end){
         set_clickable();
       },
       403: function(){ alert("Unauthorized"); },
-      500: function(error){ alert('error:'+error); }
+      500: save_changes_handle_error
     }
   });
 };
