@@ -75,7 +75,7 @@ as their only argument.")
 
 (defun org-ehtml-file-handler (request)
   (with-slots (process headers) request
-    (let ((path (ws-in-directory-p org-ehtml-docroot
+    (let ((path (ws-in-directory-p (expand-file-name org-ehtml-docroot)
                                    (substring (cdr (assoc :GET headers)) 1))))
       (if path
           (org-ehtml-serve-file path process)
