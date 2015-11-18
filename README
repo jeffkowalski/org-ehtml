@@ -37,10 +37,10 @@ USAGE
 
     5. Point your browser to [3] select a page, and move your mouse
        over the page.  Editable portions of the page will be
-       highlighted, click on these to edit.
+       highlighted (currently only item bodies). Click on these to edit.
 
        [3]  http://localhost:8888
-
+       
 EXTENSIONS
 
     Integration with Version Control
