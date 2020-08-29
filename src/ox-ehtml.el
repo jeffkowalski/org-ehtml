@@ -168,7 +168,7 @@
     (table       . ,(def-ehtml-wrap org-html-table))
     (verbatim    . ,(def-ehtml-wrap org-html-verbatim))
     (quote-block . ,(def-ehtml-wrap org-html-quote-block))
-    ;; (src-block   . ,(def-ehtml-wrap org-html-src-block))
+    (src-block   . ,(def-ehtml-wrap org-html-src-block))
     (verse-block . ,(def-ehtml-wrap org-html-verse-block))))
 
 (defun org-ehtml-export-as-html
