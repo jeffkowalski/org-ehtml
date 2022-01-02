@@ -40,8 +40,8 @@
 (defvar org-ehtml-jquery
   "https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js")
 
-(defvar org-ehtml-js
-  (file-contents (expand-file-name "ox-ehtml.js" org-ehtml-base)))
+(defvar org-ehtml-js)
+(setq org-ehtml-js (file-contents (expand-file-name "ox-ehtml.js" org-ehtml-base)))
 
 (defun org-ehtml-scripts ()
   (concat
@@ -73,6 +73,15 @@
   :group 'org-export-ehtml
   :type '(repeat symbol))
 
+(defcustom org-ehtml-button-format
+  "<button type=\"button\" onclick=\"run_src_block('%n')\">%l</button>"
+  "Format string for exporting source blocks to buttons.
+It should run `run_src_block' on the onclick event.
+The format specifier %n is replaced with the source block name
+and the specifier %l is replaced with the button label."
+  :group 'org-export-ehtml
+  :type 'string)
+
 (defvar org-ehtml-headline nil
   "Used to pass headline from `org-ehtml-format-headline-wrap' to
   `org-ehtml-format-headine-function'.")
@@ -81,24 +90,22 @@
   "Used to pass info from `org-ehtml-format-headline-wrap' to
   `org-ehtml-format-headine-function'.")
 
-(defun org-ehtml-format-headline-function (&rest args)
-  (if org-ehtml-headline
-      (let*
-          ((headline org-ehtml-headline)
-           (info org-ehtml-info)
-           (html (apply #'org-html-format-headline-default-function args))
-           (begin (number-to-string (org-element-property :begin headline)))
-           (contents-begin (org-element-property :contents-begin headline))
-           (end (number-to-string (if contents-begin
-                                      contents-begin
-                                    (org-element-property :end headline))))
-           (org (org-org-headline headline "" info)))
-        (org-fill-template org-ehtml-wrap-template
-                           `(("html-text" . ,html)
-                             ("org-text"  . ,org)
-                             ("begin"     . ,begin)
-                             ("end"       . ,end))))
-    ""))
+(defun org-ehtml-format-headine-function (&rest args)
+  (let*
+      ((headline org-ehtml-headline)
+       (info org-ehtml-info)
+       (html (apply #'org-html-format-headline-default-function args))
+       (begin (number-to-string (org-element-property :begin headline)))
+       (contents-begin (org-element-property :contents-begin headline))
+       (end (number-to-string (if contents-begin
+				  contents-begin
+				(org-element-property :end headline))))
+       (org (org-org-headline headline "" info)))
+    (org-fill-template org-ehtml-wrap-template
+                       `(("html-text" . ,html)
+                         ("org-text"  . ,org)
+                         ("begin"     . ,begin)
+                         ("end"       . ,end)))))
 
 (defun org-ehtml-format-headline-wrap (headline contents info)
   (if org-ehtml-editable-headlines
@@ -154,6 +161,32 @@
                                  (plist-get (cadr element) :end)))))
            html-text)))))
 
+(defun org-ehtml-src-block (src-block contents info)
+  "Additional to `org-html-src-block' handle source blocks with ATTR_EHTML.
+The args SRC-BLOCK, CONTENTS and INFO are
+passed through to `org-html-src-block'.
+If the source block has the ATTR_EHTML attribute :type
+the source block is replaced by a control element of that type.
+Currently, only \"button\" is supported as type.
+Clicking that butten evaluates the source block."
+  (let ((type (org-export-read-attribute
+		     :attr_ehtml src-block
+		     :type)))
+    (if type
+	(let* ((name (org-element-property :name src-block)))
+	  (unless name
+	    (user-error "Source blocks with ehtml-attr must be named"))
+	  (pcase type
+	    ("button"
+	      (format-spec
+	       org-ehtml-button-format
+	       (list (cons ?n name)
+		     (cons ?l (or (org-export-read-attribute :attr_ehtml src-block :label) name)))
+	       ))
+	    (_
+	     (user-error "Unknown ehtml-attr"))))
+      (org-html-src-block src-block contents info))))
+
 (org-export-define-derived-backend 'ehtml 'html
   :menu-entry
   '(?e "Export to Editable HTML"
@@ -176,7 +209,7 @@
     (table       . ,(def-ehtml-wrap org-html-table))
     (verbatim    . ,(def-ehtml-wrap org-html-verbatim))
     (quote-block . ,(def-ehtml-wrap org-html-quote-block))
-    (src-block   . ,(def-ehtml-wrap org-html-src-block))
+    (src-block   . org-ehtml-src-block)
     (verse-block . ,(def-ehtml-wrap org-html-verse-block))))
 
 (defun org-ehtml-export-as-html

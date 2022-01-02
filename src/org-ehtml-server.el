@@ -1,4 +1,4 @@
-;;; org-ehtml-server.el --- emacs web server for editable Org-mode files
+;;; org-ehtml-server.el --- emacs web server for editable Org-mode files -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2012 Eric Schulte <schulte.eric@gmail.com>
 
@@ -26,6 +26,7 @@
 ;;; Code:
 (require 'web-server)
 (require 'ox-ehtml)
+(require 'cl-lib)
 
 (declare-function org-agenda-write "org-agenda"
 		  (file &optional open nosettings agenda-bufname))
@@ -69,17 +70,22 @@ as their only argument.")
 (defvar org-ehtml-allow-agenda nil
   "If non-nil agenda views are allowed.")
 
+(defvar org-ehtml-allow-src-block nil
+  "If calling of source blocks from the generated HTML page is allowed.")
+
 (defvar org-ehtml-handler
   '(((:GET  . ".*") . org-ehtml-file-handler)
     ((:POST . ".*") . org-ehtml-edit-handler)))
 
 (defun org-ehtml-file-handler (request)
   (with-slots (process headers) request
-    (let ((path (ws-in-directory-p (expand-file-name org-ehtml-docroot)
-                                   (substring (cdr (assoc :GET headers)) 1))))
-      (if path
-          (org-ehtml-serve-file path process)
-        (ws-send-404 process)))))
+    (if (assoc "src_block_name" headers)
+	(org-ehtml-src-block-handler request)
+      (let ((path (ws-in-directory-p org-ehtml-docroot
+                                     (substring (cdr (assoc :GET headers)) 1))))
+	(if path
+            (org-ehtml-serve-file path process)
+          (ws-send-404 process))))))
 
 (defun org-ehtml-send-400 (proc message)
   "Send 400 to PROC with a MESSAGE."
@@ -118,14 +124,17 @@ as their only argument.")
         (`"custom"
          (let ((custom org-agenda-custom-commands)
                (prefixes nil)
-               (descriptions nil))
+               (descriptions nil)
+	       entry
+	       key
+	       desc)
            (while (setq entry (pop custom))
              (setq key (car entry) desc (nth 1 entry))
              (when (> (length key) 0)
-               (add-to-list 'prefixes key)
-               (add-to-list
-                'descriptions
-                (format "<a href=\"/agenda/custom/%s\">%s</a>:%s " key key desc))))
+               (pushnew key prefixes)
+               (pushnew
+                (format "<a href=\"/agenda/custom/%s\">%s</a>:%s " key key desc)
+		descriptions)))
            (if (member (car params) prefixes)
                (org-agenda nil (car params))
              (org-ehtml-send-400 proc
@@ -138,7 +147,7 @@ as their only argument.")
       (with-current-buffer org-agenda-buffer-name
         (let ((fname (make-temp-file "agenda-" nil ".html")))
 	  (unwind-protect
-	      (progn 
+	      (progn
 		(org-agenda-write fname)
 		(ws-send-file proc fname)
 		)
@@ -203,6 +212,23 @@ as their only argument.")
         '("Content-type" . "text/html; charset=utf-8"))
       (process-send-string process
         (org-export-string-as org 'html 'body-only '(:with-toc nil))))))
+
+(defun org-ehtml-src-block-handler (request)
+  "Run the source block :src_block_name in REQUEST."
+  (with-slots (process headers) request
+    (let* ((path       (substring (cdr (assoc "path" headers)) 1))
+	   (src-block-name (cdr (assoc "src_block_name" headers))))
+      (cl-assert (stringp src-block-name) nil "Internal error in `org-ehtml-src-block-handler'. Expected src_block_name, got %s" src-block-name)
+      (when (string= (file-name-nondirectory path) "")
+        (setq path (concat path "index.org")))
+      (when (string= (file-name-extension path) "html")
+        (setq path (concat (file-name-sans-extension path) ".org")))
+      (org-babel-with-temp-filebuffer (expand-file-name path org-ehtml-docroot)
+        (let ((result (eval `(org-sbe ,src-block-name))))
+          (run-hook-with-args 'org-ehtml-after-src-block request src-block-name result)))
+      (ws-response-header process 200
+			  '("Content-type" . "text/html; charset=utf-8")))
+    ))
 
 (provide 'org-ehtml-server)
 ;;; org-ehtml-server.el ends here
