@@ -80,3 +80,18 @@ function update_offsets(end, delta){
     if(old_end >= end) { $(this).attr('contents-end', (old_end + delta)); }
   });
 };
+
+function run_src_block(arg_src_block_name) {
+  var here = window.location.pathname;
+  $.ajax({
+    type: 'GET',
+    url: here,
+      data: {
+	  src_block_name: arg_src_block_name,
+          path: here},
+    statusCode: {
+      403: function(){ alert("Unauthorized"); },
+      500: function(error){ alert('error:'+error); }
+    }
+  });
+}
