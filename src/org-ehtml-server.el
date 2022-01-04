@@ -26,6 +26,7 @@
 ;;; Code:
 (require 'web-server)
 (require 'ox-ehtml)
+(require 'org-agenda)
 (require 'cl-lib)
 
 (declare-function org-agenda-write "org-agenda"
@@ -130,8 +131,8 @@ as their only argument.")
            (while (setq entry (pop custom))
              (setq key (car entry) desc (nth 1 entry))
              (when (> (length key) 0)
-               (pushnew key prefixes)
-               (pushnew
+               (cl-pushnew key prefixes)
+               (cl-pushnew
                 (format "<a href=\"/agenda/custom/%s\">%s</a>:%s " key key desc)
 		descriptions)))
            (if (member (car params) prefixes)
@@ -198,7 +199,8 @@ as their only argument.")
       (when (string= (file-name-extension path) "html")
         (setq path (concat (file-name-sans-extension path) ".org")))
       (org-babel-with-temp-filebuffer (expand-file-name path org-ehtml-docroot)
-        (let ((result (eval `(org-sbe ,src-block-name))))
+        (let* ((org-confirm-babel-evaluate nil)
+	       (result (eval `(org-sbe ,src-block-name))))
           (run-hook-with-args 'org-ehtml-after-src-block request src-block-name result)))
       (ws-response-header process 200
 			  '("Content-type" . "text/html; charset=utf-8")))
