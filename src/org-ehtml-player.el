@@ -70,7 +70,7 @@ The PLAYER is mapped to a command by `org-ehtml-players'.
 Only ehtml BACKEND is supported."
   (unless (memq backend '(ehtml html)) ;; This should be (eq backend 'ehtml), but there is actually a bug in `org-html-link'.
     (user-error "Org ehtml links can only be exported to ehtml"))
-  (format "<a href=\"?%s\">%s</a>"
+  (format "<a href=\"?ehtml-query=%s\">%s</a>"
 	  (url-encode-url (format "%S" (list 'org-ehtml-play (list 'quote player) path)))
 	  description))
 
