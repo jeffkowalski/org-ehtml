@@ -28,6 +28,7 @@
 (require 'ox-ehtml)
 (require 'org-agenda)
 (require 'cl-lib)
+(require 'subr-x)
 
 (declare-function org-agenda-write "org-agenda"
 		  (file &optional open nosettings agenda-bufname))
@@ -80,13 +81,20 @@ as their only argument.")
 
 (defun org-ehtml-file-handler (request)
   (with-slots (process headers) request
-    (if (assoc "src_block_name" headers)
-	(org-ehtml-src-block-handler request)
+    (cond
+     ((assoc "src_block_name" headers)
+      (org-ehtml-src-block-handler request))
+     ((let ((user (assoc :SEC-FETCH-USER headers)))
+	(and (stringp user)
+	     (eq (string-to-char user) ??)
+	     (org-ehtml-query-handler request)
+	     t)))
+     (t
       (let ((path (ws-in-directory-p org-ehtml-docroot
                                      (substring (cdr (assoc :GET headers)) 1))))
 	(if path
             (org-ehtml-serve-file path process)
-          (ws-send-404 process))))))
+          (ws-send-404 process)))))))
 
 (defun org-ehtml-send-400 (proc message)
   "Send 400 to PROC with a MESSAGE."
@@ -202,6 +210,51 @@ as their only argument.")
         (let* ((org-confirm-babel-evaluate nil)
 	       (result (eval `(org-sbe ,src-block-name))))
           (run-hook-with-args 'org-ehtml-after-src-block request src-block-name result)))
+      (ws-response-header process 200
+			  '("Content-type" . "text/html; charset=utf-8")))
+    ))
+
+(defun org-ehtml-qsymbol-p (form)
+  "Return non-nil if FORM is a quoted symbol."
+  (and (consp form)
+       (eq (car form) 'quote)
+       (symbolp (cadr form))))
+;; Test:
+;; (org-ehtml-qsymbol-p (car '('sym)))
+
+(defun org-ehtml-safe-form-p (form)
+  "Test whether FORM from a url is safe for evaluation."
+  (when-let (((consp form))
+	     (sym (car form))
+	     ((symbolp sym))
+	     (test (get sym 'org-ehtml-safe-form)))
+    (cl-loop for arg-test in (cdr test)
+	     for arg in (cdr form)
+	     unless (funcall arg-test arg)
+	     return nil
+	     finally return t)))
+
+(defun org-ehtml-query-handler (request)
+  "Run the source block :src_block_name in REQUEST."
+  (with-slots (process headers) request
+    (let* ((path       (substring (cdr (assoc "path" headers)) 1))
+	   (query (cdr (assoc :SEC-FETCH-USER headers))))
+      (cl-assert (stringp query) (eq (string-to-char query) ??) nil "Internal error in `org-ehtml-src-block-handler'. Expected query url, got %s" query)
+      (setq query (url-unhex-string (substring query 1)))
+
+      (when (string= (file-name-nondirectory path) "")
+        (setq path (concat path "index.org")))
+      (when (string= (file-name-extension path) "html")
+        (setq path (concat (file-name-sans-extension path) ".org")))
+      (org-babel-with-temp-filebuffer (expand-file-name path org-ehtml-docroot)
+      (when-let ((cmd (read query))
+		 ((or (consp cmd)
+		      (user-error "Expected form as query of url got %s")))
+		 (sym (car query))
+		 ((or (org-ehtml-safe-form-p cmd)
+		      (user-error "Expected function symbol as first element of form got %s" sym)))
+		 (result (eval cmd)))
+        (run-hook-with-args 'org-ehtml-after-query request cmd result)))
       (ws-response-header process 200
 			  '("Content-type" . "text/html; charset=utf-8")))
     ))
