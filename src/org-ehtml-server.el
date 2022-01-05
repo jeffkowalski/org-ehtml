@@ -26,7 +26,9 @@
 ;;; Code:
 (require 'web-server)
 (require 'ox-ehtml)
+(require 'org-agenda)
 (require 'cl-lib)
+(require 'subr-x)
 
 (declare-function org-agenda-write "org-agenda"
 		  (file &optional open nosettings agenda-bufname))
@@ -79,13 +81,17 @@ as their only argument.")
 
 (defun org-ehtml-file-handler (request)
   (with-slots (process headers) request
-    (if (assoc "src_block_name" headers)
-	(org-ehtml-src-block-handler request)
+    (cond
+     ((assoc "src_block_name" headers)
+      (org-ehtml-src-block-handler request))
+     ((alist-get "ehtml-query" headers nil nil 'string-equal)
+      (org-ehtml-query-handler request))
+     (t
       (let ((path (ws-in-directory-p org-ehtml-docroot
                                      (substring (cdr (assoc :GET headers)) 1))))
 	(if path
             (org-ehtml-serve-file path process)
-          (ws-send-404 process))))))
+          (ws-send-404 process)))))))
 
 (defun org-ehtml-send-400 (proc message)
   "Send 400 to PROC with a MESSAGE."
@@ -131,8 +137,8 @@ as their only argument.")
            (while (setq entry (pop custom))
              (setq key (car entry) desc (nth 1 entry))
              (when (> (length key) 0)
-               (pushnew key prefixes)
-               (pushnew
+               (cl-pushnew key prefixes)
+               (cl-pushnew
                 (format "<a href=\"/agenda/custom/%s\">%s</a>:%s " key key desc)
 		descriptions)))
            (if (member (car params) prefixes)
@@ -198,11 +204,7 @@ as their only argument.")
     (let* ((path       (substring (cdr (assoc "path" headers)) 1))
            (beg (string-to-number (cdr (assoc "beg"  headers))))
            (end (string-to-number (cdr (assoc "end"  headers))))
-           (org                   (cdr (assoc "org"  headers))))
-	  ;; decode the org content
-	  (setq org
-	   (decode-coding-string org 'utf-8)
-	   )
+           (org                   (decode-coding-string (cdr (assoc "org"  headers)) 'utf-8-unix t)))
       (when (string= (file-name-nondirectory path) "")
         (setq path (concat path "index.org")))
       (when (string= (file-name-extension path) "html")
@@ -224,11 +226,50 @@ as their only argument.")
       (when (string= (file-name-extension path) "html")
         (setq path (concat (file-name-sans-extension path) ".org")))
       (org-babel-with-temp-filebuffer (expand-file-name path org-ehtml-docroot)
-        (let ((result (eval `(org-sbe ,src-block-name))))
+        (let* ((org-confirm-babel-evaluate nil)
+	       (result (eval `(org-sbe ,src-block-name))))
           (run-hook-with-args 'org-ehtml-after-src-block request src-block-name result)))
       (ws-response-header process 200
 			  '("Content-type" . "text/html; charset=utf-8")))
     ))
+
+(defun org-ehtml-qsymbol-p (form)
+  "Return non-nil if FORM is a quoted symbol."
+  (and (consp form)
+       (eq (car form) 'quote)
+       (symbolp (cadr form))))
+;; Test:
+;; (org-ehtml-qsymbol-p (car '('sym)))
+
+(defun org-ehtml-safe-form-p (form)
+  "Test whether FORM from a url is safe for evaluation."
+  (when-let (((consp form))
+	     (sym (car form))
+	     ((symbolp sym))
+	     (test (get sym 'org-ehtml-safe-form)))
+    (cl-loop for arg-test in (cdr test)
+	     for arg in (cdr form)
+	     unless (funcall arg-test arg)
+	     return nil
+	     finally return t)))
+
+(defvar org-ehtml-after-query nil
+  "Hook run after handling queries ?ehtml-query=...")
+
+(defun org-ehtml-query-handler (request)
+  "Run the source block :src_block_name in REQUEST."
+  (with-slots (process headers) request
+    (let* ((query (alist-get "ehtml-query" headers nil nil #'string-equal)))
+      (cl-assert (stringp query) nil "Internal error in `org-ehtml-src-block-handler'. Expected query url, got %s" query)
+      (when-let ((cmd (read query))
+		 ((or (consp cmd)
+		      (user-error "Expected form as query of url got %s")))
+		 ((or (org-ehtml-safe-form-p cmd)
+		      (user-error "Not a safe command for ehtml query: %s" cmd)))
+		 (result (eval cmd)))
+        (run-hook-with-args 'org-ehtml-after-query request cmd result)))
+    (ws-response-header process 200
+			'("Content-type" . "text/html; charset=utf-8"))))
 
 (provide 'org-ehtml-server)
 ;;; org-ehtml-server.el ends here
