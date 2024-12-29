@@ -4,6 +4,7 @@
 
 ;; Author: Eric Schulte <schulte.eric@gmail.com>
 ;; Keywords: org web-server javascript html
+;; Package-Requires: ((emacs "24.3") (web-server "20140109.2200"))
 
 ;; This file is not (yet) part of GNU Emacs.
 ;; However, it is distributed under the same license.
